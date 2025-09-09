@@ -30,6 +30,8 @@ from decimal import Decimal
 from service.models import Product, Category, db
 from service import app
 from tests.factories import ProductFactory
+from service.models import DataValidationError
+
 
 DATABASE_URI = os.getenv(
     "DATABASE_URI", "postgresql://postgres:postgres@localhost:5432/postgres"
@@ -101,9 +103,11 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(new_product.available, product.available)
         self.assertEqual(new_product.category, product.category)
 
+
+    #* ADD YOUR TEST CASES HERE (DONE)
     def test_read_a_product(self):
         """It should Read a Product"""
-        product = ProductFactory() 
+        product = ProductFactory()
         product.id = None
         product.create()
         self.assertIsNotNone(product.id)
@@ -113,7 +117,8 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(found_product.name, product.name)
         self.assertEqual(found_product.description, product.description)
         self.assertEqual(found_product.price, product.price)
-    
+
+
     def test_update_a_product(self):
         """It should Update a Product"""
         product = ProductFactory()
@@ -143,7 +148,6 @@ class TestProductModel(unittest.TestCase):
         product.delete()
         self.assertEqual(len(Product.all()), 0)
 
-     
 
     def test_list_all_products(self):
         """It should List all Products in the database"""
@@ -171,7 +175,6 @@ class TestProductModel(unittest.TestCase):
             self.assertEqual(product.name, name)
 
 
-
     def test_find_by_availability(self):
         """It should Find Products by Availability"""
         products = ProductFactory.create_batch(10)
@@ -183,7 +186,6 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(found.count(), count)
         for product in found:
             self.assertEqual(product.available, available)
-
 
 
     def test_find_by_category(self):
@@ -198,4 +200,67 @@ class TestProductModel(unittest.TestCase):
         for product in found:
             self.assertEqual(product.category, category)
 
-            
+
+    def test_deserialize_missing_name(self):
+        """It should raise DataValidationError when 'name' is missing"""
+        product = Product()
+        data = {
+            "description": "A test description",
+            "price": "10.00",
+            "available": True,
+            "category": "FOOD"
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("missing name", str(context.exception))
+
+    def test_deserialize_invalid_available_type(self):
+        """It should raise DataValidationError when 'available' is not a boolean"""
+        product = Product()
+        data = {
+            "name": "Test Product",
+            "description": "A test description",
+            "price": "10.00",
+            "available": "yes",  # Invalid type
+            "category": "FOOD"
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("Invalid type for boolean [available]", str(context.exception))
+
+    def test_deserialize_invalid_category(self):
+        """It should raise DataValidationError when 'category' is invalid"""
+        product = Product()
+        data = {
+            "name": "Test Product",
+            "description": "A test description",
+            "price": "10.00",
+            "available": True,
+            "category": "INVALID_CATEGORY" # This should trigger AttributeError
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("Invalid attribute", str(context.exception))
+
+    def test_find_by_price_with_string(self):
+        """It should find products by price when price is passed as a string"""
+        # Create a product with a specific price
+        test_product = ProductFactory()
+        test_product.price = Decimal('19.99')
+        test_product.create()
+
+        # Search using a string
+        found = Product.find_by_price("19.99")
+        self.assertEqual(found.count(), 1)
+        self.assertEqual(found[0].id, test_product.id)
+
+        # Search using a string with extra spaces/quotes (as handled by the code)
+        found = Product.find_by_price(' "20.00" ')
+        # This should find nothing, but it tests the string stripping logic
+        # Create another product to test a match with stripped string
+        product_2 = ProductFactory()
+        product_2.price = Decimal('20.00')
+        product_2.create()
+        found = Product.find_by_price(' "20.00" ')
+        self.assertEqual(found.count(), 1)
+        self.assertEqual(found[0].id, product_2.id)
